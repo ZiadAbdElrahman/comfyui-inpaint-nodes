@@ -160,17 +160,27 @@ class ApplyFooocusInpaint:
         inpaint_head_model.to(device=feed.device, dtype=feed.dtype)
         inpaint_head_feature = inpaint_head_model(feed)
 
-        def input_block_patch(h, transformer_options):
+        def input_block_patch(h, transformer_options, inpaint_head_feature):
+            scale_factor = h.size(0) // inpaint_head_feature.size(0)
+            if scale_factor != 1:
+                inpaint_head_feature = inpaint_head_feature.repeat(scale_factor, 1, 1, 1)
             if transformer_options["block"][1] == 0:
                 h = h + inpaint_head_feature.to(h)
             return h
+        
+        # def input_block_patch(h, transformer_options):
+        #     if transformer_options["block"][1] == 0:
+        #         h = h + inpaint_head_feature.to(h)
+        #     return h
 
         lora_keys = comfy.lora.model_lora_keys_unet(model.model, {})
         lora_keys.update({x: x for x in base_model.state_dict().keys()})
         loaded_lora = load_fooocus_patch(inpaint_lora, lora_keys)
 
         m = model.clone()
-        m.set_model_input_block_patch(input_block_patch)
+        # m.set_model_input_block_patch(input_block_patch)
+        m.set_model_input_block_patch(lambda h, opts: input_block_patch(h, opts, inpaint_head_feature))
+
         patched = m.add_patches(loaded_lora, 1.0)
 
         not_patched_count = sum(1 for x in loaded_lora if x not in patched)
